@@ -1,0 +1,172 @@
+syntax = "proto3";
+package vnet.v1alpha;
+
+option go_package = "/netd.v1alpha";
+
+import "simplePool.proto";
+
+message Empty {
+}
+
+service NetworkD {
+    // VNet crud API
+    rpc CreateVNet(CreateVNetRequest) returns (VNet) {}
+    rpc ListVNets(ListVNetsRequest) returns (VNets) {}
+    rpc GetVNet(GetVNetRequest) returns (VNet) {}
+    rpc DeleteVNet(DeleteVNetRequest) returns (Empty) {}
+
+    rpc WatchVNets(WatchVNetsRequest) returns (stream WatchVNetsResponse) {}
+
+    // Allocates an IP and publishes the Nic configuration in the vnet.
+    rpc AllocateIp(AllocateIpRequest) returns (AllocateIpResponse) {}
+    // Deallocates an IP and publishes the Nic configuration removal in the vnet.
+    rpc DeallocateIp(DeallocateIpRequest) returns (DeallocateIpResponse) {}
+    // Watch for changes on IP/endpoints in the vnet.
+    rpc WatchIPMapping(WatchIPMappingRequest) returns (stream WatchIPMappingResponse) {}
+    
+}
+
+enum NicType {
+    NOTHING = 0;
+    TAP = 1;
+    MAIN = 2;
+    CONTAINER = 3;
+}
+
+// NicConfiguration is the main endpoint data that is published and used to connect each IP/nic to a 
+// particular network.
+message NicConfiguration {
+    string vnet = 1;
+    string tag = 2;
+    string name = 3;
+    string key = 4;
+    repeated string tags = 5;
+
+	string publicKey = 6;
+	string endpoint = 7;
+	string listenPort = 8;
+	bool IsGW = 9;
+    NicType nicType = 10;
+
+    optional IPConfiguration IPConfiguration = 15;
+}
+
+message IPConfiguration {
+	string containerID = 1;
+	string IPAddress = 2;
+	string GWAddress = 3;
+	DNSConfig dnsConfig = 4;
+    string dnsName = 5;
+}
+
+message AllocateIpRequest {
+    string vnetID = 1;
+    string containerID = 2;
+    string ipAddress = 3;
+    string dnsName = 4;
+    bool passThrough = 5;
+
+    NicConfiguration NicConfiguration = 6;
+}
+
+message AllocateIpResponse {
+    string containerID = 1;
+    NicConfiguration NicConfiguration = 2;
+    VNet vnet = 3;
+}
+
+message DeallocateIpRequest {
+    string vnetID = 1;
+    string containerID = 2;
+}
+
+message DeallocateIpResponse {
+    string vnetID = 1;
+    string containerID = 2;
+    string ipAddress = 3;
+    //NicConfiguration NicConfiguration = 3;
+}
+
+message WatchIPMappingRequest {
+    string vnetID = 1;
+}
+
+message WatchIPMappingResponse {
+    enum Action {
+        NOTHING = 0;
+        SNAPSHOT = 1;
+        CHANGE = 2;
+        DELETE = 3;
+      }
+      Action action = 1;
+      string id = 2;
+      string vnetId = 3;
+      string key = 4;
+      NicConfiguration nicConfiguration = 5;
+}
+
+message CreateVNetRequest {
+    VNet vnet = 1;
+    repeated string reservedIP = 2;
+}
+
+message ListVNetsRequest {
+}
+
+message GetVNetRequest {
+    string id = 1;
+}
+
+message DeleteVNetRequest {
+    string id = 1;
+}
+
+message WatchVNetsRequest {
+    string id = 1;
+}
+
+message WatchVNetsResponse {
+    enum Action {
+        NOTHING = 0;
+        SNAPSHOT = 1;
+        CHANGE = 2;
+        DELETE = 3;
+      }
+      Action action = 1;
+      string id = 2;
+      string key = 3;
+      VNet vnet = 4;
+}
+
+
+message VNets {
+    repeated VNet vnet = 1;
+  }
+
+message VNet {
+    string id = 1;
+    string tag = 2;
+    string name = 3;
+    string key = 4;
+
+    string subnet = 6;
+    string gwIPAddress = 7;
+    string gwLocalIPAddress = 8;
+    string gwEndpoint = 9;
+    string gwPublicKey = 10;
+
+    DNSConfig dnsConfig = 14;
+    simplePool.SimplePool ipPool = 15;
+}
+
+message DNSConfig {
+    repeated string server = 1;
+	repeated string search = 2;
+    int32 ndots = 3;
+}
+
+message PoolData {
+    string id = 1;
+    map<string, string> reservedIPs = 2;
+    map<string, string> allocatedIPs = 3;
+}

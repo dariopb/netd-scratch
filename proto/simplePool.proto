@@ -1,0 +1,19 @@
+syntax = "proto3";
+package simplePool;
+
+option go_package = "/simplePool";
+
+message SimplePool {
+    string resourceType = 1;
+    string poolId = 2;
+
+    string subnet = 3;
+    //map<string, PoolItem> itemsReserved = 6;
+    map<string, PoolItem> itemsUsed = 7;
+}
+
+
+message PoolItem {
+	string value = 1;
+	string metadata = 2;
+}

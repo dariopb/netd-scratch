@@ -1,0 +1,79 @@
+syntax = "proto3";
+package netnode.v1alpha;
+
+option go_package = "/netnode.v1alpha";
+
+import "simplePool.proto";
+import "vnet.proto";
+
+message Empty {
+}
+
+service NetNode {
+    // Local node API
+
+    // AllocateIp is called by the local runtime to allocate an IP Address and register a "nic" with the network.
+    rpc AllocateIp(AllocateIpRequest) returns (AllocateIpResponse) {}
+    // DeallocateIpRequest is called by the local runtime to release an IP address.
+    rpc DeallocateIp(DeallocateIpRequest) returns (DeallocateIpResponse) {}
+}
+
+// IPConfiguration gives ipconfiguration and local interface information for a 
+// runtime to be able to attach a VM/container.
+message IPConfigurationLocal {
+	string containerID = 1;
+	string IPAddress = 2;
+	string GWAddress = 3;
+	DNSConfig dnsConfig = 4;
+    string dnsName = 5;
+
+    string localInterface = 8;
+    int32 localPort = 9;
+}
+
+message VNet {
+    string id = 1;
+    string tag = 2;
+    string name = 3;
+    string key = 4;
+
+    string subnet = 6;
+    string gwIPAddress = 7;
+    string gwEndpoint = 8;
+    string gwPublicKey = 9;
+
+    DNSConfig dnsConfig = 10;
+    simplePool.SimplePool ipPool = 11;
+}
+
+message DNSConfig {
+    repeated string server = 1;
+	repeated string search = 2;
+    int32 ndots = 3;
+}
+
+message AllocateIpRequest {
+    string vnetID = 1;
+    string containerID = 2;
+    string ipAddress = 3;
+    string dnsName = 4;
+    vnet.v1alpha.NicType nicType = 5;
+    bool isDefaultGW = 6;
+}
+
+message AllocateIpResponse {
+    string containerID = 1;
+    IPConfigurationLocal ipConfiguration = 2;
+    VNet vnet = 3;
+}
+
+message DeallocateIpRequest {
+    string vnetID = 1;
+    string containerID = 2;
+}
+
+message DeallocateIpResponse {
+    string containerID = 1;
+    IPConfigurationLocal ipConfiguration = 2;
+}
+

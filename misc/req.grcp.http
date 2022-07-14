@@ -1,0 +1,125 @@
+
+grpcurl -d '{"id": 1234}' grpc.server.com:443 my.server.Service/Method
+# or
+grpcurl localhost:4444 list
+
+
+
+
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto list
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto list vnet.v1alpha.NetworkD
+
+
+# GetVNet 2222
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto -plaintext -d "{\"id\":\"2222\"}" localhost:4444 vnet.v1alpha.NetworkD.GetVNet
+
+# DeleteVNet vnet1
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto -plaintext -d "{\"id\":\"vnet1\"}" localhost:4444 vnet.v1alpha.NetworkD.DeleteVNet
+
+# NetNode, AllocateIP
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto netnode.proto -plaintext -d "{\"containerID\":\"2222\",\"vnetID\":\"vnet1\",\"ipAddress\":\"\"}" localhost:9999 netnode.v1alpha.NetNode.AllocateIp
+
+# NetNode, DeallocateIP
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto netnode.proto -plaintext -d "{\"containerID\":\"2222\",\"vnetID\":\"vnet1\"}" localhost:9999 netnode.v1alpha.NetNode.DeallocateIp
+
+
+vnet.NetworkD.WatchVNets
+
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto -plaintext -d '{"id": ""}' localhost:4444 vnet.v1alpha.NetworkD.WatchVNets
+
+c:\tools\grpcurl.exe -import-path c:\projects\containers\ms\meru\netd\proto -proto vnet.proto -plaintext localhost:4444 vnet.v1alpha.NetworkD.WatchVNets
+
+########
+# Linux
+
+export TARGET=localhost
+export TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJOYW1lIjoiMSIsIkFkbWluIjp0cnVlfQ.BMwxDsoP6sb5ijNTUsPGskZ6Rc_NP-_xbeQRM18d2-A"
+
+# vnet.NetworkD.WatchVNets
+./grpcurl -insecure -rpc-header authorization:$TOKEN $TARGET:4444 vnet.v1alpha.NetworkD.ListVNets
+
+# vnet.NetworkD.WatchIPMapping
+./grpcurl -plaintext -d '{"vnetID":"vnet1"}' localhost:4444 vnet.v1alpha.NetworkD.WatchIPMapping
+
+# NetNode, AllocateIP
+./grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"2223","vnetID":"vnet1","ipAddress":"", "nicType":"TAP"}' $TARGET:9999 netnode.v1alpha.NetNode.AllocateIp
+
+# NetNode, AllocateIP MAIN as GW
+./grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"2223","vnetID":"vnet1","ipAddress":"", "nicType":"MAIN", "isDefaultGW":true}' $TARGET:9999 netnode.v1alpha.NetNode.AllocateIp
+
+# NetNode, DeallocateIP
+./grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"2223","vnetID":"vnet1"}' localhost:9999 netnode.v1alpha.NetNode.DeallocateIp
+
+# Publish extra mappings
+export TARGET=20.106.122.181
+
+./grpcurl -d @ -plaintext $TARGET:4444 vnet.v1alpha.NetworkD.AllocateIp <<EOM
+{
+    "containerID": "gwdario",
+    "ipAddress": "1.99.0.1",
+    "passThrough": true,
+    "NicConfiguration": {
+        "endpoint": "20.94.249.71:44444",
+        "IsGW": true,
+        "listenPort": "44444",
+        "name": "gwdario",
+        "publicKey": "JwU30u5QglDIRLLeqKBHAKMv3D3HfcOCpHauBGAi1R4=",
+        "tag": "0",
+        "vnet": "vnet1"
+    },
+    "vnetID": "vnet1"
+}
+EOM
+
+export TARGET=20.106.122.181
+export TARGET=localhost
+
+./grpcurl -d @ -insecure -rpc-header authorization:$TOKEN $TARGET:4444 vnet.v1alpha.NetworkD.CreateVNet <<EOM
+{
+    "vnet": {
+        "id": "vnet1",
+        "name": "vnet1",
+        "tag": "0",
+        "subnet": "2.99.0.0/24",
+        "dnsConfig": {
+            "ndots": 1,
+            "search": [
+               "dario.com"
+            ],
+            "server": [
+                "1.1.1.1"
+            ]
+        },
+        "gwEndpoint": "",
+        "gwIPAddress": "2.99.0.1",
+        "gwLocalIPAddress": "2.99.0.2",
+        "gwPublicKey": "xxxxxxxx"
+    },
+    "reservedIP": [
+        "2.99.0.1", "2.99.0.2", "2.99.0.3"
+    ]
+}
+EOM
+
+# vnet.NetworkD.DeleteVNet
+./grpcurl -insecure -rpc-header authorization:$TOKEN -d '{"id":"vnet1"}' $TARGET:4444 vnet.v1alpha.NetworkD.DeleteVNet
+
+
+./grpcurl -insecure $TARGET:4444 list
+
+
+# SERVICES
+./grpcurl -d @ -insecure -rpc-header authorization:$TOKEN $TARGET:4444 service.v1alpha.ServiceD.Update <<EOM
+{
+  "id": "service1",
+  "vnetId": "vnet1",
+  "tags": [ "service1" ],
+  "endpoints": [ {"vnetId":"vnet1", "ipEndpoint":"1.0.0.2:8080"} ]
+}
+EOM
+
+# vnet.NetworkD.DeleteVNet
+./grpcurl -insecure -rpc-header authorization:$TOKEN -d '{"id":"service1"}' $TARGET:4444 service.v1alpha.ServiceD.Delete
+
+
+

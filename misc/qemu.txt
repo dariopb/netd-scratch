@@ -1,0 +1,62 @@
+
+
+cat > metadata.yaml <<EOF
+instance-id: dario1
+local-hostname: dario1
+network-interfaces: |
+  iface enp0s2 inet static
+  address 192.168.122.10
+  network 192.168.122.0
+  netmask 255.255.255.0
+  broadcast 192.168.122.255
+  gateway 192.168.122.1
+EOF
+
+
+cat > user-data.yaml <<EOF
+#cloud-config
+chpasswd:
+  list: |
+    root:123
+  expire: False
+EOF
+
+cloud-localds -v --network-config=net.cfg seed.img user-data.yaml metadata.yaml
+cloud-localds -v --network-config=net.cfg seed.img user-data.yaml
+
+qemu-system-x86_64  \
+  -machine accel=kvm,type=q35 \
+  -cpu host \
+  -m 1G \
+  -device virtio-net-pci,netdev=net0 \
+  -netdev tap,id=net0,ifname=nic-1e4fe785_t,script=no,downscript=no \
+  -drive if=virtio,format=qcow2,file=1.img \
+  -drive if=virtio,format=raw,file=seed.img \
+  -nographic 
+
+nic-1e4fe785_t
+
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -netdev tap,ifname=dar1,id=net0,script=no,downscript=no \
+
+
+
+network-interfaces: |
+  iface eth0 inet static
+  address 192.168.122.10
+  network 192.168.122.0
+  netmask 255.255.255.0
+  broadcast 192.168.122.255
+  gateway 192.168.122.1
+
+network:
+  version: 1
+  config:
+    - type: physical
+      name: enp0s2
+      subnets:
+         - type: static
+           address: 1.99.0.88/24
+           gateway: 1.99.0.1
+
+

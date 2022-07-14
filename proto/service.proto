@@ -1,0 +1,72 @@
+syntax = "proto3";
+package service.v1alpha;
+
+option go_package = "/service.v1alpha";
+
+message Empty {
+}
+
+service ServiceD {
+    // VNet crud API
+    rpc Update(Service) returns (Service) {}
+    rpc List(ServiceListRequest) returns (Services) {}
+    rpc Get(ServiceGetRequest) returns (Service) {}
+    rpc Delete(ServiceDeleteRequest) returns (Empty) {}
+
+    rpc Watch(ServiceWatchRequest) returns (stream ServiceWatchResponse) {}
+}
+
+
+message ServiceListRequest {
+}
+
+message ServiceGetRequest {
+    string id = 1;
+}
+
+message ServiceDeleteRequest {
+    string id = 1;
+}
+
+message ServiceWatchRequest {
+    string id = 1;
+}
+
+message ServiceWatchResponse {
+    enum Action {
+        NOTHING = 0;
+        SNAPSHOT = 1;
+        CHANGE = 2;
+        DELETE = 3;
+      }
+      Action action = 1;
+      string id = 2;
+      string key = 3;
+      Service service = 4;
+}
+
+
+message Services {
+    repeated Service service = 1;
+  }
+
+message ServiceEndpoint {
+    string vnetId = 1;
+    string ipEndpoint = 2;
+}
+
+message Service {
+    string id = 1;
+    string tag = 2;
+    string name = 3;
+    string key = 4;
+
+    string vnetId = 7;
+    repeated string tags = 8;
+    repeated ServiceEndpoint endpoints = 9;
+}
+
+message Endpoint {
+    string endpoint = 1;
+
+}
