@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	status "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -22,13 +23,15 @@ import (
 )
 
 type SubscriptionChannel struct {
-	ID      string
-	Channel chan *pb.WatchVNetsResponse
+	ID       string
+	ClientId string
+	Channel  chan *pb.WatchVNetsResponse
 }
 
 type SubscriptionChannelNic struct {
-	ID      string
-	Channel chan *pb.WatchIPMappingResponse
+	ID       string
+	ClientId string
+	Channel  chan *pb.WatchIPMappingResponse
 }
 
 type VNetServer struct {
@@ -224,8 +227,9 @@ func (n *VNetServer) Subscribe(clientName string, realm string, id string, key s
 
 	clientChan := make(chan *pb.WatchVNetsResponse, 100)
 	n.clientChannels[clientName] = SubscriptionChannel{
-		ID:      id,
-		Channel: clientChan,
+		ID:       id,
+		ClientId: clientName,
+		Channel:  clientChan,
 	}
 	n.mtx.Unlock()
 
@@ -325,6 +329,13 @@ func (n *VNetServer) WatchVNets(req *pb.WatchVNetsRequest, stream pb.NetworkD_Wa
 
 	p, _ := peer.FromContext(stream.Context())
 	peerId := p.Addr.String()
+	md, ok := metadata.FromIncomingContext(stream.Context())
+	if ok {
+		v := md.Get("mysession")
+		if len(v) > 0 {
+			peerId = peerId + "-" + v[0]
+		}
+	}
 
 	realm := "default"
 	discoveryData, err := n.Subscribe(peerId, realm, req.Id, "")

@@ -56,12 +56,12 @@ func WatchIPMappingResponse_AreEqual(a *pbVnet.WatchIPMappingResponse, b *pbVnet
 
 func (sc *ServiceController) WatchServiceLoop(ctx context.Context) error {
 
-	vnetClient := pbVnet.NewNetworkDClient(sc.conn)
+	//vnetClient := pbVnet.NewNetworkDClient(sc.conn)
 	serviceClient := pb.NewServiceDClient(sc.conn)
 
-	tagEndpoints := make(map[string]*pb.Service)
+	//tagEndpoints := make(map[string]*pb.Service)
 	serviceMap := make(map[string]*pb.Service)
-	vnetTagMap := make(map[string]*vnetWatcherType)
+	//vnetTagMap := make(map[string]*vnetWatcherType)
 
 	w, err := reconciler.NewStreamWatcher[pb.ServiceD_WatchClient, *pb.ServiceWatchResponse](10*time.Second,
 		ServiceWatchResponse_GeyKey, ServiceWatchResponse_AreEqual)
@@ -95,16 +95,17 @@ func (sc *ServiceController) WatchServiceLoop(ctx context.Context) error {
 			opType := reconciler.DeltaType(item.Action)
 
 			if opType == reconciler.SNAPSHOT {
-				tagEndpoints = make(map[string]*pb.Service)
+				//tagEndpoints = make(map[string]*pb.Service)
 				serviceMap = make(map[string]*pb.Service)
 			}
 			if opType != reconciler.DELETE {
-				if len(item.Service.Tags) == 0 {
+				if len(item.Service.Selectors) == 0 {
 					return nil
 				}
-				if _, ok := tagEndpoints[item.Service.Tags[0]]; !ok {
+				// Changed to couple it with the vnet code, so not needed...
+				/*if _, ok := tagEndpoints[item.Service.Selector[0]]; !ok {
 					// start watching the vnet if not already
-					tagKey := item.Service.VnetId + item.Service.Tags[0]
+					tagKey := item.Service.VnetId + item.Service.Selector[0]
 					vnetWatcher, ok1 := vnetTagMap[tagKey]
 					if !ok1 {
 						ctxVnet, cancelFn := context.WithCancel(ctx)
@@ -118,27 +119,32 @@ func (sc *ServiceController) WatchServiceLoop(ctx context.Context) error {
 
 					vnetWatcher.serviceCount++
 				}
+				*/
 
-				tagEndpoints[item.Service.Tags[0]] = item.Service
+				//tagEndpoints[item.Service.Selector[0]] = item.Service
 				serviceMap[item.Key] = item.Service
 			}
 
 			if opType == reconciler.DELETE {
-				if old, ok := serviceMap[item.Key]; ok {
-					if len(old.Tags) > 0 {
-						delete(tagEndpoints, old.Tags[0])
 
-						tagKey := old.VnetId + old.Tags[0]
+				/*if old, ok := serviceMap[item.Key]; ok {
+					if len(old.Selector) > 0 {
+						delete(tagEndpoints, old.Selector[0])
+
+						tagKey := old.VnetId + old.Selector[0]
 						vnetWatcher, ok1 := vnetTagMap[tagKey]
 						if ok1 {
 							vnetWatcher.serviceCount--
 							if vnetWatcher.serviceCount == 0 {
 								vnetWatcher.cancelFn()
 							}
+
+							delete(vnetTagMap, tagKey)
 						}
 					}
 					delete(serviceMap, item.Key)
 				}
+				*/
 				return nil
 			}
 

@@ -21,14 +21,14 @@ service NetNode {
 // IPConfiguration gives ipconfiguration and local interface information for a 
 // runtime to be able to attach a VM/container.
 message IPConfigurationLocal {
-	string containerID = 1;
-	string IPAddress = 2;
-	string GWAddress = 3;
-	DNSConfig dnsConfig = 4;
+    string containerID = 1;
+    string IPAddress = 2;
+    string GWAddress = 3;
+    DNSConfig dnsConfig = 4;
     string dnsName = 5;
 
+    string netNamespace = 7;
     string localInterface = 8;
-    int32 localPort = 9;
 }
 
 message VNet {
@@ -48,7 +48,7 @@ message VNet {
 
 message DNSConfig {
     repeated string server = 1;
-	repeated string search = 2;
+    repeated string search = 2;
     int32 ndots = 3;
 }
 
@@ -59,6 +59,7 @@ message AllocateIpRequest {
     string dnsName = 4;
     vnet.v1alpha.NicType nicType = 5;
     bool isDefaultGW = 6;
+    repeated string labels = 7;
 }
 
 message AllocateIpResponse {

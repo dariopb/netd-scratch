@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	status "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -20,8 +21,9 @@ import (
 )
 
 type SubscriptionChannel struct {
-	ID      string
-	Channel chan *pb.ServiceWatchResponse
+	ID       string
+	ClientId string
+	Channel  chan *pb.ServiceWatchResponse
 }
 
 type ServiceServer struct {
@@ -30,7 +32,7 @@ type ServiceServer struct {
 	db *badger.DB
 	//items map[string]*pb.Service
 
-	clientChannels map[string]SubscriptionChannel
+	clientChannels map[string]*SubscriptionChannel
 	mtx            sync.Mutex
 }
 
@@ -44,7 +46,7 @@ func NewServiceServer(dbFilepath string, grpcServer *grpc.Server) (*ServiceServe
 
 	n := &ServiceServer{
 		db:             db,
-		clientChannels: make(map[string]SubscriptionChannel),
+		clientChannels: make(map[string]*SubscriptionChannel),
 	}
 
 	if grpcServer != nil {
@@ -93,7 +95,7 @@ func (n *ServiceServer) deleteResource(realm string, id string) error {
 		return err
 	}
 
-	n.publishUpdate(id, string(key), nil, false)
+	n.publishUpdate(id, string(key), nil, nil, false)
 
 	return nil
 }
@@ -164,12 +166,12 @@ func (n *ServiceServer) persistAndPublish(realm string, id string, data *pb.Serv
 		return err
 	}
 
-	n.publishUpdate(id, key, data, false)
+	n.publishUpdate(id, key, data, nil, false)
 
 	return nil
 }
 
-func (n *ServiceServer) publishUpdate(id string, key string, data *pb.Service, isSnapshot bool) error {
+func (n *ServiceServer) publishUpdate(id string, key string, data *pb.Service, targetSub *SubscriptionChannel, isSnapshot bool) error {
 	action := pb.ServiceWatchResponse_SNAPSHOT
 
 	if !isSnapshot {
@@ -187,11 +189,18 @@ func (n *ServiceServer) publishUpdate(id string, key string, data *pb.Service, i
 		Service: data,
 	}
 
-	for clientName, sub := range n.clientChannels {
-		//if strings.HasPrefix(key, sub.Kind) &&
-		if sub.ID == "" || sub.ID == id {
-			log.Infof("Sending update to: [%s] for key: [%s]", clientName, key)
-			sub.Channel <- notification
+	if targetSub == nil {
+		for clientName, sub := range n.clientChannels {
+			//if strings.HasPrefix(key, sub.Kind) &&
+			if sub.ID == "" || sub.ID == id {
+				log.Infof("Sending update to: [%s] for key: [%s]", clientName, key)
+				sub.Channel <- notification
+			}
+		}
+	} else {
+		if targetSub.ID == "" || targetSub.ID == id {
+			log.Infof("Sending update to: [%s] for key: [%s]", targetSub.ClientId, key)
+			targetSub.Channel <- notification
 		}
 	}
 
@@ -205,10 +214,12 @@ func (n *ServiceServer) Subscribe(clientName string, realm string, id string, ke
 	n.mtx.Lock()
 
 	clientChan := make(chan *pb.ServiceWatchResponse, 100)
-	n.clientChannels[clientName] = SubscriptionChannel{
-		ID:      id,
-		Channel: clientChan,
+	targetSub := &SubscriptionChannel{
+		ID:       id,
+		ClientId: clientName,
+		Channel:  clientChan,
 	}
+	n.clientChannels[clientName] = targetSub
 	n.mtx.Unlock()
 
 	// Send the current state on connection
@@ -217,12 +228,12 @@ func (n *ServiceServer) Subscribe(clientName string, realm string, id string, ke
 	list, err := n.listResources(realm, key)
 	if err == nil {
 		for _, data := range list {
-			n.publishUpdate(id, data.Key, data, true)
+			n.publishUpdate(id, data.Key, data, targetSub, true)
 		}
 		// DARIO: TODO: cleanup on empty snap!
 		l := len(list)
 		if l != 0 {
-			n.publishUpdate(id, list[l-1].Key, list[l-1], false)
+			n.publishUpdate(id, list[l-1].Key, list[l-1], targetSub, false)
 		}
 	}
 
@@ -296,6 +307,13 @@ func (n *ServiceServer) Watch(req *pb.ServiceWatchRequest, stream pb.ServiceD_Wa
 
 	p, _ := peer.FromContext(stream.Context())
 	peerId := p.Addr.String()
+	md, ok := metadata.FromIncomingContext(stream.Context())
+	if ok {
+		v := md.Get("mysession")
+		if len(v) > 0 {
+			peerId = peerId + "-" + v[0]
+		}
+	}
 
 	realm := "default"
 	discoveryData, err := n.Subscribe(peerId, realm, req.Id, "")

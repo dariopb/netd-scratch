@@ -111,15 +111,51 @@ EOM
 # SERVICES
 ./grpcurl -d @ -insecure -rpc-header authorization:$TOKEN $TARGET:4444 service.v1alpha.ServiceD.Update <<EOM
 {
-  "id": "service1",
+  "id": "ingress1",
   "vnetId": "vnet1",
-  "tags": [ "service1" ],
-  "endpoints": [ {"vnetId":"vnet1", "ipEndpoint":"1.0.0.2:8080"} ]
+  "selectors": { "ingress_nic": "nic1" },
+  "rules": [
+    { "name":"tcprule_8080", "tcpRule": { "protocol": "TCP", "port": 9090, "targetPort": 8080 } }
+  ],
+  "endpoints": [ {"vnetId":"vnet1", "ipEndpoint":"2.99.0.6"} ]
 }
 EOM
 
-# vnet.NetworkD.DeleteVNet
+# vnet.ServiceD.Delete
 ./grpcurl -insecure -rpc-header authorization:$TOKEN -d '{"id":"service1"}' $TARGET:4444 service.v1alpha.ServiceD.Delete
 
 
 
+# AllocateIP CONTAINER
+./grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"111111","vnetID":"vnet1","ipAddress":"", "nicType":"TAP", "isDefaultGW":true}' $TARGET:9999 netnode.v1alpha.NetNode.AllocateIp
+
+./grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"111111","vnetID":"vnet1"}' localhost:9999 netnode.v1alpha.NetNode.DeallocateIp
+
+# vnet.NetworkD.WatchIPMapping
+/home/dario/grpcurl -insecure -rpc-header authorization:$TOKEN -d '{"vnetID":"vnet1"}' $TARGET:4444 vnet.v1alpha.NetworkD.WatchIPMapping
+
+
+#========= SERVICE ("INGRESS") BASIC FLOW =========
+
+# AllocateIP INGRESS_LOCAL
+grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"ingress1","vnetID":"vnet1","ipAddress":"", "nicType":"INGRESS_LOCAL", "labels":["ingress_nic=nic1"], "isDefaultGW":true}' $TARGET:9999 netnode.v1alpha.NetNode.AllocateIp
+
+# DeallocateIP
+grpcurl -plaintext -rpc-header authorization:$TOKEN -d '{"containerID":"ingress1","vnetID":"vnet1"}' localhost:9999 netnode.v1alpha.NetNode.DeallocateIp
+
+
+# Provision an ingress using "ingress_nic=nic1"
+grpcurl -d @ -insecure -rpc-header authorization:$TOKEN $TARGET:4444 service.v1alpha.ServiceD.Update <<EOM
+{
+  "id": "service1",
+  "vnetId": "vnet1",
+  "selectors": { "ingress_nic": "nic1" },
+  "rules": [
+    { "name":"tcprule_8080", "tcpRule": { "protocol": "TCP", "port": 9090, "targetPort": 8080 } }
+  ],
+  "endpoints": [ {"vnetId":"vnet1", "ipEndpoint":"2.99.0.6"} ]
+}
+EOM
+
+# delete the ingress
+grpcurl -insecure -rpc-header authorization:$TOKEN -d '{"id":"service1"}' $TARGET:4444 service.v1alpha.ServiceD.Delete

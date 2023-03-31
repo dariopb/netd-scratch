@@ -66,6 +66,7 @@ func (ws *WorkerServer) AllocateIp(ctx context.Context, req *pbNetNode.AllocateI
 		Endpoint:   fmt.Sprintf("%s:%d", ws.wn.outboundIP, port),
 		ListenPort: strconv.Itoa(port),
 		NicType:    req.NicType,
+		Labels:     req.Labels,
 	}
 
 	if req.DnsName == "" {
@@ -90,6 +91,7 @@ func (ws *WorkerServer) AllocateIp(ctx context.Context, req *pbNetNode.AllocateI
 	}
 
 	ipConfig := allocRes.NicConfiguration.IPConfiguration
+	vnetConfig := allocRes.Vnet
 
 	res := &pbNetNode.AllocateIpResponse{
 		ContainerID: allocRes.ContainerID,
@@ -105,6 +107,12 @@ func (ws *WorkerServer) AllocateIp(ctx context.Context, req *pbNetNode.AllocateI
 			ContainerID:    ipConfig.ContainerID,
 			DnsName:        ipConfig.DnsName,
 			LocalInterface: nicID + "_t",
+			NetNamespace:   "/var/run/netns/_alc_" + nicID,
+		},
+		Vnet: &pbNetNode.VNet{
+			Id:          vnetConfig.Id,
+			Subnet:      vnetConfig.Subnet,
+			GwIPAddress: vnetConfig.GwIPAddress,
 		},
 	}
 
@@ -117,9 +125,6 @@ func (ws *WorkerServer) AllocateIp(ctx context.Context, req *pbNetNode.AllocateI
 		ws.wn.releaseVlanIDAndPersist(vlanId)
 		return nil, err
 	}
-
-	// start watching ip mappings on this vnet
-	//ws.wn.watchVnetNicsLoopFull(req.VnetID, nicID, ws.wn.NicChanged)
 
 	return res, nil
 }

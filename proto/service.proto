@@ -48,7 +48,33 @@ message ServiceWatchResponse {
 
 message Services {
     repeated Service service = 1;
-  }
+}
+
+message TCPRule {
+    string protocol = 3;
+    int32 port = 4;
+    int32 targetPort = 5;
+}
+
+message UDPRule {
+    string protocol = 3;
+    int32 port = 4;
+    int32 targetPort = 5;
+}
+
+message Rule {
+    string name = 1;
+
+    oneof protoRule {
+        TCPRule tcpRule = 4;
+        UDPRule udpRule = 5;
+    }
+}
+
+message RuleEndpoint {
+    string name = 1;
+    string endpoint = 2;
+}
 
 message ServiceEndpoint {
     string vnetId = 1;
@@ -62,8 +88,11 @@ message Service {
     string key = 4;
 
     string vnetId = 7;
-    repeated string tags = 8;
-    repeated ServiceEndpoint endpoints = 9;
+    map<string, string> selectors = 8;
+
+    repeated Rule rules = 9;
+    repeated RuleEndpoint ruleEndpoints = 10;
+    repeated ServiceEndpoint endpoints = 11;
 }
 
 message Endpoint {

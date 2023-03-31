@@ -1,7 +1,7 @@
 syntax = "proto3";
 package vnet.v1alpha;
 
-option go_package = "/netd.v1alpha";
+//option go_package = "/netd.v1alpha";
 
 import "simplePool.proto";
 
@@ -28,9 +28,17 @@ service NetworkD {
 
 enum NicType {
     NOTHING = 0;
-    TAP = 1;
-    MAIN = 2;
-    CONTAINER = 3;
+    TAP_MAIN = 1;
+    TAP = 2;
+    MAIN = 3;
+    CONTAINER = 4;
+    
+    INGRESS_LOCAL = 5;  // Ingress endpoint via localhost/etc. A vnet ip will be provisioned and the nic will
+                        // be associated with a Service via the tags.
+    INGRESS_DHCP = 6;   // Ingress endpoint via exclusive DHCP address. A vnet ip will be provisioned and the nic will
+                        // be associated with a Service via the tags.
+    INGRESS_AZURE = 7;  // Ingress endpoint via exclusive Azure secondary IP address. A vnet ip will be provisioned and the nic will
+                        // be associated with a Service via the tags.
 }
 
 // NicConfiguration is the main endpoint data that is published and used to connect each IP/nic to a 
@@ -40,7 +48,7 @@ message NicConfiguration {
     string tag = 2;
     string name = 3;
     string key = 4;
-    repeated string tags = 5;
+    repeated string labels = 5;
 
 	string publicKey = 6;
 	string endpoint = 7;

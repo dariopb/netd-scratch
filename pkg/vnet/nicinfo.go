@@ -55,7 +55,7 @@ func (n *VNetServer) deleteResourceNic(realm string, vnetId string, id string) e
 		return err
 	}
 
-	n.publishUpdateNic(id, string(key), nil, false)
+	n.publishUpdateNic(id, string(key), nil, nil, false)
 
 	return nil
 }
@@ -126,15 +126,15 @@ func (n *VNetServer) persistAndPublishNic(realm string, vnetId string, id string
 		return err
 	}
 
-	n.publishUpdateNic(id, key, data, false)
+	n.publishUpdateNic(id, key, data, nil, false)
 
 	return nil
 }
 
-func (n *VNetServer) publishUpdateNic(id string, key string, data *pb.NicConfiguration, isSnapshot bool) error {
+func (n *VNetServer) publishUpdateNic(id string, key string, data *pb.NicConfiguration, targetSub *SubscriptionChannelNic, isSnap bool) error {
 	action := pb.WatchIPMappingResponse_SNAPSHOT
 
-	if !isSnapshot {
+	if !isSnap {
 		if data != nil {
 			action = pb.WatchIPMappingResponse_CHANGE
 		} else {
@@ -149,11 +149,18 @@ func (n *VNetServer) publishUpdateNic(id string, key string, data *pb.NicConfigu
 		NicConfiguration: data,
 	}
 
-	for clientName, sub := range n.clientChannelsNic {
-		//if strings.HasPrefix(key, sub.Kind) &&
-		if sub.ID == "" || sub.ID == id {
-			log.Infof("Sending update to: [%s] for key: [%s]", clientName, key)
-			sub.Channel <- notification
+	if targetSub == nil {
+		for clientName, sub := range n.clientChannelsNic {
+			//if strings.HasPrefix(key, sub.Kind) &&
+			if sub.ID == "" || sub.ID == id {
+				log.Infof("Sending update to: [%s] for key: [%s]", clientName, key)
+				sub.Channel <- notification
+			}
+		}
+	} else {
+		if targetSub.ID == "" || targetSub.ID == id {
+			log.Infof("Sending update to: [%s] for key: [%s]", targetSub.ClientId, key)
+			targetSub.Channel <- notification
 		}
 	}
 
@@ -167,10 +174,12 @@ func (n *VNetServer) SubscribeNic(clientName string, realm string, vnetId string
 	n.mtx.Lock()
 
 	clientChan := make(chan *pb.WatchIPMappingResponse, 100)
-	n.clientChannelsNic[clientName] = SubscriptionChannelNic{
-		ID:      id,
-		Channel: clientChan,
+	targetSub := &SubscriptionChannelNic{
+		ID:       id,
+		ClientId: clientName,
+		Channel:  clientChan,
 	}
+	n.clientChannelsNic[clientName] = *targetSub
 	n.mtx.Unlock()
 
 	// Send the current state on connection
@@ -179,13 +188,13 @@ func (n *VNetServer) SubscribeNic(clientName string, realm string, vnetId string
 	list, err := n.listResourcesNic(realm, vnetId, key)
 	if err == nil {
 		for _, data := range list {
-			n.publishUpdateNic(id, data.Key, data, true)
+			n.publishUpdateNic(id, data.Key, data, targetSub, true)
 		}
 
 		// DARIO: TODO: cleanup on empty snap!
 		l := len(list)
 		if l != 0 {
-			n.publishUpdateNic(id, list[l-1].Key, list[l-1], false)
+			n.publishUpdateNic(id, list[l-1].Key, list[l-1], targetSub, false)
 		}
 	}
 

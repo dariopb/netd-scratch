@@ -127,6 +127,7 @@ func (r *Reconciler[T1, T2]) ProcessChangeEvent(obj T1, id string, opType DeltaT
 		(*r.localState)[id] = newV2
 	} else if opType == DELETE {
 		delete(*r.localState, id)
+		delete(r.desiredState, id)
 	}
 
 	return nil

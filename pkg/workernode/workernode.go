@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	dhcp "github.com/dariopb/netd/pkg/dhcp"
 	"github.com/dariopb/netd/pkg/helpers"
 	"github.com/dariopb/netd/pkg/reconciler"
 	types "github.com/dariopb/netd/pkg/types"
@@ -24,18 +25,21 @@ type WorkerNode struct {
 	port        int
 	isNodeStack bool
 	outboundIP  string
+	outboundNic *net.Interface
 	conn        *grpc.ClientConn
 	vnetClient  pb.NetworkDClient
 	grpcTimeout time.Duration
 
-	vrf      types.NetworkNodeOps
-	basePort int
+	vrf         types.NetworkNodeOps
+	dhcpHandler dhcp.DHCP
+	basePort    int
 
 	nicWatcherMap map[string]*NicWatcher
 	nicWatcherMtx sync.Mutex
 
-	sd    *localNodeData
-	store *helpers.ConfigFile
+	sd              *localNodeData
+	store           *helpers.ConfigFile
+	localNicDataMap map[string]*types.LocalNicData
 
 	ctx      context.Context
 	cancelFn context.CancelFunc
@@ -57,7 +61,6 @@ type localNodeData struct {
 	Name     string              `json:"name"`
 	VlanPool *helpers.SimplePool `json:"vlanPool"`
 
-	Nics    map[string]*types.NicData `json:"nics"`
 	Vnets   map[string]*localVnetData `json:"vnets"`
 	VlanMap map[string]string         `json:"vlanMap"`
 	mtx     sync.Mutex
@@ -76,7 +79,7 @@ func NewWorkerNode(nodeID string, port int, conn *grpc.ClientConn,
 	log.Infof("Creating workerNode: nodeID: %s, grpc port: %d, defaultSubnet: %s",
 		nodeID, port, defaultSubnet)
 
-	outboundIP := getOutboundIP()
+	outboundIP, outboundNic := getOutboundIPAndLink()
 
 	//ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	netClient := pb.NewNetworkDClient(conn)
@@ -89,12 +92,20 @@ func NewWorkerNode(nodeID string, port int, conn *grpc.ClientConn,
 		vnetClient:    netClient,
 		isNodeStack:   isNodeStack,
 		outboundIP:    outboundIP,
+		outboundNic:   outboundNic,
 		nicWatcherMap: make(map[string]*NicWatcher),
-		basePort:      44000,
+		basePort:      44200,
+
+		localNicDataMap: make(map[string]*types.LocalNicData),
 	}
 
 	if isNodeStack {
-		wn.vrf = vmVRF{}
+		wn.vrf = vmVRF{
+			outboundIP:   wn.outboundIP,
+			outboundNic:  wn.outboundNic,
+			localDynMech: dhcp.NewDhcpHandler(time.Second*10, time.Second*15, true),
+		}
+
 		//wn.vrf = nodeVRF{
 		//	NodeName:     nodeID,
 		//	IsNamespaced: false,
@@ -107,7 +118,6 @@ func NewWorkerNode(nodeID string, port int, conn *grpc.ClientConn,
 	sd := &localNodeData{Name: "localNodeData"}
 	wn.store, err = helpers.NewAppData("local_node_store.json")
 	wn.store.LoadConfig(sd, false, func() (interface{}, error) {
-		sd.Nics = make(map[string]*types.NicData)
 		sd.Vnets = make(map[string]*localVnetData)
 		sd.VlanMap = make(map[string]string)
 
@@ -127,11 +137,6 @@ func NewWorkerNode(nodeID string, port int, conn *grpc.ClientConn,
 	if err != nil {
 		return nil, err
 	}
-
-	// Clean up the fresh data
-	// Notice that I need to preserve at least the vlan pool and the vlan<->subnet map!
-	sd.Nics = make(map[string]*types.NicData)
-	//sd.Vnets = make(map[string]*localVnetData)
 
 	// keep it handy
 	wn.sd = sd
@@ -158,6 +163,29 @@ func NewWorkerNode(nodeID string, port int, conn *grpc.ClientConn,
 	go wn.nodeLoop()
 
 	return wn, nil
+}
+
+func (wn *WorkerNode) GetLocalNicDataForLabel(vnetId string, label string) (*types.LocalNicData, error) {
+	wn.sd.mtx.Lock()
+	defer wn.sd.mtx.Unlock()
+
+	for _, localVnet := range wn.sd.Vnets {
+		for _, nic := range localVnet.Nics {
+			for _, lb := range nic.Labels {
+				if label == lb {
+					log.Infof("GetLocalNicDataForLabel: vnet: [%s], label: [%s]: found localNic: %s", vnetId, label, nic.Name)
+					lnd, ok := wn.localNicDataMap[nic.Name]
+					if ok {
+						return lnd, nil
+					} else {
+						return nil, fmt.Errorf("No localNicData for label %s found", label)
+					}
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("No localNicData for label %s found", label)
 }
 
 func (wn *WorkerNode) getVlanIDAndPersist(nicID string) (string, error) {
@@ -238,16 +266,29 @@ func (wn *WorkerNode) startLocalServer() {
 }
 
 // Get outbound ip of this machine
-func getOutboundIP() string {
+func getOutboundIPAndLink() (string, *net.Interface) {
 	conn, err := net.Dial("udp", "8.8.8.8:8888")
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	defer conn.Close()
 
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	localAddr := conn.LocalAddr().(*net.UDPAddr).IP.String()
 
-	return localAddr.IP.String()
+	links, _ := net.Interfaces()
+	for _, l := range links {
+		addrs, _ := l.Addrs()
+		for _, addr := range addrs {
+
+			if strings.Contains(addr.String(), localAddr) {
+				log.Infof("getOutboundIPAndLink: IP: [%s], link: [%s], mac: [%s]", localAddr, l.Name, l.HardwareAddr.String())
+				return localAddr, &l
+			}
+		}
+	}
+
+	log.Error("getOutboundIPAndLink: failed to find outbound IP")
+	return "", nil
 }
 
 func (wn *WorkerNode) nodeLoop() {
@@ -377,7 +418,7 @@ func (wn *WorkerNode) watchVNetNicsLoop(nw *NicWatcher) error {
 func (wn *WorkerNode) setupLocalEndpoint(vnet *pb.VNet, nic *pb.NicConfiguration, localIndex string) error {
 	log.Infof("setupLocalEndpoint: setting up infra for: vnet: [%s], nic: [%s] with ip: [%s]", vnet.Id, nic.Name, nic.IPConfiguration.IPAddress)
 
-	_, err := wn.vrf.SetupVRF(vnet, nic, localIndex)
+	lnd, err := wn.vrf.SetupVRF(vnet, nic, localIndex)
 	if err != nil {
 		return err
 	}
@@ -392,6 +433,8 @@ func (wn *WorkerNode) setupLocalEndpoint(vnet *pb.VNet, nic *pb.NicConfiguration
 			Vnet: vnet,
 		}
 	}
+
+	wn.localNicDataMap[nic.Name] = lnd
 	localVnet.Nics[nic.Name] = nic
 	wn.sd.Vnets[vnet.Id] = localVnet
 	wn.store.Save()
@@ -416,11 +459,14 @@ func (wn *WorkerNode) removeLocalEndpoint(vnetID string, nicID string) error {
 
 	err = wn.releaseVlanIDAndPersist(nicID)
 	if err != nil {
+		wn.sd.mtx.Unlock()
 		return err
 	}
 
 	// Persist the fact that I have local state
 	wn.sd.mtx.Lock()
+	delete(wn.localNicDataMap, nicID)
+
 	localVnet, ok := wn.sd.Vnets[vnetID]
 
 	if ok {
